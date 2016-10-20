@@ -13,7 +13,7 @@ namespace HenrySample
 	{
 		public string Name;
 		public IHenryBasePageModel Model;
-		public string Data;
+		public string Data;		// this is not yet implemented but will come from the url and so is a string but likely an integer as a string
 	}
 
 	public static class Henry
@@ -87,6 +87,8 @@ namespace HenrySample
 			UnregisteredResolutionAction = FreshTinyIoC.UnregisteredResolutionActions.GenericsOnly,
 			NamedResolutionFailureAction = FreshTinyIoC.NamedResolutionFailureActions.AttemptUnnamedResolution
 		};
+
+		// quiet because it returns null instead of throwing an exception when it fails
 		public static ResolveType QuietResolve<ResolveType>(string aName) where ResolveType : class
 		{
 			var type = typeof(ResolveType);
@@ -105,27 +107,32 @@ namespace HenrySample
 			return Activator.CreateInstance(modelType) as IHenryBasePageModel;
 		}
 
-		static Page GetCurrentPage()
-		{
-			var container = App.Current.MainPage;
-			return container?.Navigation?.NavigationStack?.Last() as Page;
+		public static Page CurrentPage {
+			get {
+				var container = App.Current.MainPage;
+				return container?.Navigation?.NavigationStack?.Last() as Page;
+			}
 		}
 
-		static FreshBasePageModel GetCurrentPageModel()
-		{
-			return GetCurrentPage()?.GetModel();
+		public static FreshBasePageModel CurrentPageModel {
+			get {
+				return CurrentPage?.GetModel();
+			}
 		}
 
-		public static IPageModelCoreMethods GetCoreMethods()
-		{
-			return GetCurrentPageModel()?.CoreMethods;
+		public static IPageModelCoreMethods CoreMethods {
+			get {
+				return CurrentPageModel?.CoreMethods;
+			}
 		}
 
-		public static string GetCurrentUrl()
-		{
-			if (CurrentContainer == null)
-				return null;
-			return UrlOfContainer(CurrentContainer);
+		public static string CurrentUrl {
+			get
+			{
+				if (CurrentContainer == null)
+					return null;
+				return UrlOfContainer(CurrentContainer);
+			}
 		}
 
 		static string UrlOfContainer(IFreshNavigationService currentContainer)
@@ -161,7 +168,7 @@ namespace HenrySample
 			if (App.Current.MainPage == null)
 				App.Current.MainPage = concreteContainer;
 			else
-				GetCoreMethods().SwitchOutRootNavigation(newContainer.NavigationServiceName);
+				CoreMethods.SwitchOutRootNavigation(newContainer.NavigationServiceName);
 		}
 
 		//public static void PushPageByName(IFreshNavigationService aContainer, string aName, object aData)
@@ -172,7 +179,7 @@ namespace HenrySample
 		public static async Task<bool> PushSegment(IFreshNavigationService aContainer, PagePathSegment s)
 		{
 			Page page = ResolveSegmentPageModel(s);
-			var result = await s.Model.NavigateIn();
+			var result = await s.Model.Loading();
 			if (result)
 			{
 				Debug.WriteLine("Pushing " + s.Name);
@@ -311,7 +318,7 @@ namespace HenrySample
 			if (aUrl == null)
 				throw new ArgumentNullException();
 
-			string currentUrl = GetCurrentUrl();
+			string currentUrl = CurrentUrl;
 			string[] urlParts = splitUrl(aUrl);
 			IEnumerable<PagePathSegment> urlSegments = SegmentsFromUrlParts(urlParts);
 
@@ -332,25 +339,11 @@ namespace HenrySample
 					result = true;
 				}
 				else {
-
-					//IFreshNavigationService newContainer = null;
-					//if (CurrentContainer == null)
-					//{
-					//	IFreshNavigationService container = null;
-					//	var name = urlParts[0];
-					//	container = ResolveContainer(name);
-					//	if (container == null)
-					//		throw new Exception("Not able to find container " + name);
-					//	CurrentContainer = newContainer = container;
-					//} 
-
 					var currentUrlParts = splitUrl(currentUrl);
 
 					IFreshNavigationService destContainer = null;
 					IEnumerable<PagePathSegment> segmentsToPop = null;
 					IEnumerable<PagePathSegment> segmentsToPush = null;
-					IFreshNavigationService newContainer = null;
-					Type containerType = null;
 
 					bool firstNavigation = currentUrl == null;
 					bool sameContainer = !firstNavigation && urlParts[0] == currentUrlParts[0];
@@ -420,7 +413,7 @@ namespace HenrySample
 						segmentsToPush = segmentsToPush.Count()==1 ? null : segmentsToPush.ToList().GetRange(1, segmentsToPush.Count() - 1);
 
 						var page = ResolveSegmentPageModel(rootPageSegment);
-						var proceed = await rootPageSegment.Model.NavigateIn();
+						var proceed = await rootPageSegment.Model.Loading();
 						if (!proceed)
 						{
 							// do what?
