@@ -5,7 +5,7 @@ using Xamarin.Forms;
 
 namespace HenrySample
 {
-	public partial class ThirdPage : ContentPage
+	public partial class ThirdPage : BasePage
 	{
 		public ThirdPage()
 		{

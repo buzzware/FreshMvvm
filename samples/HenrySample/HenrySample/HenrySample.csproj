@@ -63,6 +63,7 @@
     <Compile Include="PageModels\ThirdPageModel.cs" />
     <Compile Include="Henry\Henry.cs" />
     <Compile Include="Henry\HenryBasePageModel.cs" />
+    <Compile Include="Pages\BasePage.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\FreshMvvm\FreshMvvm.csproj">

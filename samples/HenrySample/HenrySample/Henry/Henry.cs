@@ -19,31 +19,53 @@ namespace HenrySample
 	public static class Henry
 	{
 
-		static string NormalizeContainerName(string aName)
+		static string EnsureSuffix(string aName, string aSuffix)
 		{
-			if (!aName.EndsWith("Container"))
-				aName += "Container";
+			if (!aName.EndsWith(aSuffix))
+				aName += aSuffix;
 			return aName;
+		}
+
+		static string TrimSuffix(string aName, string aSuffix)
+		{
+			if (aName.EndsWith(aSuffix))
+				aName = aName.Substring(0, aName.Length - aSuffix.Length);
+			return aName;
+		}
+
+
+		static string FullContainerName(string aName)
+		{
+			return EnsureSuffix(aName,"Container");
+		}
+
+		static string BriefContainerName(string aName)
+		{
+			return TrimSuffix(aName,"Container");
+		}
+
+		static string FullPageModelName(string aName)
+		{
+			return EnsureSuffix(aName, "PageModel");
+		}
+
+		static string BriefPageModelName(string aName)
+		{
+			return TrimSuffix(aName, "PageModel");
 		}
 
 		public static void RegisterContainer<T>(string aName) where T : class, IFreshNavigationService
 		{
-			aName = NormalizeContainerName(aName);
+			aName = FullContainerName(aName);
 			FreshIOC.Container.Register(typeof(T), aName+"Type");
 		}
 
-		static string NormalizePageModelName(string aName)
-		{
-			if (!aName.EndsWith("PageModel"))
-				aName += "PageModel";
-			return aName;
-		}
 
 		public static void RegisterPageModel<T>(string aName = null) where T : IHenryBasePageModel
 		{
 			if (aName == null)
 				aName = typeof(T).Name;
-			aName = NormalizePageModelName(aName);
+			aName = FullPageModelName(aName);
 			FreshIOC.Container.Register(typeof(T), aName);
 		}
 
@@ -76,7 +98,7 @@ namespace HenrySample
 
 		public static IHenryBasePageModel ResolvePageModel(string aName)
 		{
-			aName = NormalizePageModelName(aName);
+			aName = FullPageModelName(aName);
 			var modelType = QuietResolve<Type>(aName);
 			if (modelType == null)
 				return null;
@@ -114,11 +136,18 @@ namespace HenrySample
 			{
 				var m = n.GetModel() as IHenryBasePageModel;
 				return m.Name;
-			});
+			}).ToList();
+			parts.Insert(0, BriefContainerName(currentContainer.NavigationServiceName));
 			return "/" + String.Join("/", parts);
 		}
 
-		public static IFreshNavigationService CurrentContainer { get; private set; }
+		public static IFreshNavigationService CurrentContainer
+		{
+			get
+			{
+				return App.Current.MainPage as IFreshNavigationService;
+			}
+		}
 
 		public static bool isRelativeUrl(string aUrl)
 		{
@@ -145,7 +174,11 @@ namespace HenrySample
 			Page page = ResolveSegmentPageModel(s);
 			var result = await s.Model.NavigateIn();
 			if (result)
+			{
+				Debug.WriteLine("Pushing " + s.Name);
 				await aContainer.PushPage(page, s.Model as FreshBasePageModel, modal: false, animate: false);
+				Debug.WriteLine("Pushed " + s.Name);
+			}
 			return result;
 		}
 
@@ -177,6 +210,7 @@ namespace HenrySample
 				}
 				if (!proceed)
 					return false;
+				//await Task.Delay(100);
 			}
 			return true;
 		}
@@ -321,7 +355,7 @@ namespace HenrySample
 					bool firstNavigation = currentUrl == null;
 					bool sameContainer = !firstNavigation && urlParts[0] == currentUrlParts[0];
 
-					destContainer = QuietResolve<IFreshNavigationService>(urlParts[0]);
+					destContainer = sameContainer ? CurrentContainer : QuietResolve<IFreshNavigationService>(FullContainerName(urlParts[0]));
 
 					// FreshMVVM Code
 					//var page = FreshPageModelResolver.ResolvePageModel<T>(data);
@@ -357,29 +391,24 @@ namespace HenrySample
 						segmentsToPush = SegmentsFromUrlParts(urlParts.ToList().GetRange(1, urlParts.Length - 1));
 					}
 					else {
-						if (sameContainer)
-						{                      
-							destContainer = CurrentContainer;
-							var containerUrl = UrlOfContainer(newContainer);
+
+						if (aDestructive && !sameContainer)
+						{
+							if (CurrentContainer != null)
+							{
+								await CurrentContainer.PopToRoot(animate: false);
+							}
+						}
+
+						if (destContainer == null)
+						{
+							segmentsToPush = SegmentsFromUrlParts(urlParts.ToList().GetRange(1, urlParts.Length - 1));
+						}
+						else {
+							var containerUrl = UrlOfContainer(destContainer);
 							var containerUrlSegments = SegmentsFromUrl(containerUrl);
 							segmentsToPop = GetSegmentsToPop(containerUrlSegments, urlSegments);
 							segmentsToPush = GetSegmentsToPush(containerUrlSegments, urlSegments);
-						}
-						else {	// changing container
-							if (aDestructive)
-							{
-								if (CurrentContainer != null)
-								{
-									await CurrentContainer.PopToRoot(animate: false);
-								}
-							}
-							if (destContainer != null)	// destination container exists
-							{
-								var containerUrl = UrlOfContainer(newContainer);
-								var containerUrlSegments = SegmentsFromUrl(containerUrl);
-								segmentsToPop = GetSegmentsToPop(containerUrlSegments, urlSegments);
-								segmentsToPush = GetSegmentsToPush(containerUrlSegments, urlSegments);
-							}
 						}
 					}
 
@@ -435,7 +464,7 @@ namespace HenrySample
 		static IFreshNavigationService CreateContainer(string aName, Page aPage)
 		{
 			IFreshNavigationService result = null;
-			aName = NormalizeContainerName(aName);
+			aName = FullContainerName(aName);
 			var containerType = QuietResolve<Type>(aName + "Type");
 			if (containerType == typeof(FreshNavigationContainer)) {
 				return new FreshNavigationContainer(aPage,aName);

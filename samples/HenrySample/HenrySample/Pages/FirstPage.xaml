@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ContentPage 
+<local:BasePage 
 		xmlns="http://xamarin.com/schemas/2014/forms" 
 		xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml" 
+		xmlns:local="clr-namespace:HenrySample;assembly=HenrySample"	
 		x:Class="HenrySample.FirstPage">
-	<ContentPage.Content>
+	<local:BasePage.Content>
 		<StackLayout BackgroundColor="Green">
 			<Label Text="First"/>
+			<Button Text="Second" Clicked="LinkButtonClicked"/>
+			<Button Text="/Login/First/Second/Third" Clicked="LinkButtonClicked"/>
+			<Button Text="/Main/Third" Clicked="LinkButtonClicked"/>
 		</StackLayout>
-	</ContentPage.Content>
-</ContentPage>
+	</local:BasePage.Content>
+</local:BasePage>
