@@ -16,37 +16,68 @@ namespace HenrySample
 		public string Data;
 	}
 
-	public class Henry
+	public static class Henry
 	{
-		public Henry()
+
+		static string NormalizeContainerName(string aName)
 		{
+			if (!aName.EndsWith("Container"))
+				aName += "Container";
+			return aName;
 		}
-
-
 
 		public static void RegisterContainer<T>(string aName) where T : class, IFreshNavigationService
 		{
-			FreshIOC.Container.Register(typeof(T), aName).AsSingleton();
+			aName = NormalizeContainerName(aName);
+			FreshIOC.Container.Register(typeof(T), aName+"Type");
+		}
+
+		static string NormalizePageModelName(string aName)
+		{
+			if (!aName.EndsWith("PageModel"))
+				aName += "PageModel";
+			return aName;
 		}
 
 		public static void RegisterPageModel<T>(string aName = null) where T : IHenryBasePageModel
 		{
 			if (aName == null)
 				aName = typeof(T).Name;
-			FreshIOC.Container.Register(typeof(T), aName).AsSingleton();
+			aName = NormalizePageModelName(aName);
+			FreshIOC.Container.Register(typeof(T), aName);
 		}
 
-		public static IFreshNavigationService ResolveContainer(string aName)
+
+		//public static IFreshNavigationService ResolveContainer(string aName)
+		//{
+		//	aName = NormalizeContainerName(aName);
+		//	var containerType = FreshIOC.Container.Resolve<Type>(aName+"Type");
+
+
+
+		//	if (containerType == null)
+		//		return null;
+		//	return Activator.CreateInstance(containerType) as IFreshNavigationService;
+		//}
+
+		static FreshTinyIoC.ResolveOptions quietResolveoptions = new FreshTinyIoC.ResolveOptions()
 		{
-			var containerType = FreshIOC.Container.Resolve<Type>(aName);
-			if (containerType == null)
+			UnregisteredResolutionAction = FreshTinyIoC.UnregisteredResolutionActions.GenericsOnly,
+			NamedResolutionFailureAction = FreshTinyIoC.NamedResolutionFailureActions.AttemptUnnamedResolution
+		};
+		public static ResolveType QuietResolve<ResolveType>(string aName) where ResolveType : class
+		{
+			var type = typeof(ResolveType);
+			if (FreshTinyIOCBuiltIn.Current.CanResolve(type, aName, quietResolveoptions))
+				return FreshTinyIOCBuiltIn.Current.Resolve(type, aName, quietResolveoptions) as ResolveType;
+			else
 				return null;
-			return Activator.CreateInstance(containerType) as IFreshNavigationService;
 		}
 
 		public static IHenryBasePageModel ResolvePageModel(string aName)
 		{
-			var modelType = FreshIOC.Container.Resolve<Type>(aName);
+			aName = NormalizePageModelName(aName);
+			var modelType = QuietResolve<Type>(aName);
 			if (modelType == null)
 				return null;
 			return Activator.CreateInstance(modelType) as IHenryBasePageModel;
@@ -58,7 +89,8 @@ namespace HenrySample
 			return container?.Navigation?.NavigationStack?.Last() as Page;
 		}
 
-		static FreshBasePageModel GetCurrentPageModel() {
+		static FreshBasePageModel GetCurrentPageModel()
+		{
 			return GetCurrentPage()?.GetModel();
 		}
 
@@ -78,18 +110,12 @@ namespace HenrySample
 		{
 			var concreteContainer = currentContainer as Page;
 			var navStack = concreteContainer.Navigation.NavigationStack;
-			var parts = List<string>();
-			return navStack.Select((n) =>
+			var parts = navStack.Select((n) =>
 			{
-				var m = n.GetModel();
-				if (m == null)
-					return;
-				
+				var m = n.GetModel() as IHenryBasePageModel;
+				return m.Name;
 			});
-			foreach (var n in navStack)
-			{
-				p
-			}
+			return "/" + String.Join("/", parts);
 		}
 
 		public static IFreshNavigationService CurrentContainer { get; private set; }
@@ -116,18 +142,23 @@ namespace HenrySample
 
 		public static async Task<bool> PushSegment(IFreshNavigationService aContainer, PagePathSegment s)
 		{
+			Page page = ResolveSegmentPageModel(s);
+			var result = await s.Model.NavigateIn();
+			if (result)
+				await aContainer.PushPage(page, s.Model as FreshBasePageModel, modal: false, animate: false);
+			return result;
+		}
+
+		static Page ResolveSegmentPageModel(PagePathSegment s)
+		{
 			if (s.Model == null)
 				s.Model = ResolvePageModel(s.Name);
 			s.Model.Name = s.Name;
 			s.Model.Data = s.Data;
-			var concreteModel = s.Model as FreshBasePageModel;
+			FreshBasePageModel concreteModel = s.Model as FreshBasePageModel;
 			if (concreteModel == null)
 				throw new Exception("Model was not a FreshBasePageModel");
-			var page = FreshPageModelResolver.ResolvePageModel(s.Data, concreteModel);
-			var result = await s.Model.NavigateIn();
-			if (result)
-				await aContainer.PushPage(page, concreteModel, modal: false, animate: false);
-			return result;
+			return FreshPageModelResolver.ResolvePageModel(s.Data, concreteModel);
 		}
 
 		public static async Task<bool> PushSegments(IFreshNavigationService aContainer, IEnumerable<PagePathSegment> aSegments)
@@ -152,14 +183,7 @@ namespace HenrySample
 
 		public static IEnumerable<PagePathSegment> SegmentsFromUrlParts(IEnumerable<string> aUrl)
 		{
-			var result = new List<PagePathSegment>();
-			foreach (var p in aUrl)
-			{
-				var s = new PagePathSegment();
-				s.Name = p;
-				s.Data = null;  // later set from following part
-			}
-			return result;
+			return aUrl.Select<String, PagePathSegment>(p => new PagePathSegment() { Name = p, Data = null });
 		}
 
 		public static IEnumerable<PagePathSegment> SegmentsFromUrl(string aUrl)
@@ -178,8 +202,9 @@ namespace HenrySample
 
 		static string[] splitUrl(string aUrl)
 		{
-			if (aUrl == null || aUrl == "")
+			if (aUrl == null || aUrl == "" || aUrl == "/")
 				return new string[] { };
+			aUrl = aUrl.TrimStart(new char[] { '/' });
 			return aUrl.Split('/').OfType<String>().ToArray();
 		}
 
@@ -202,7 +227,8 @@ namespace HenrySample
 			var i = 0;
 			var result = new List<PagePathSegment>();
 			var divergent = false;
-			foreach (var e in existing) {				
+			foreach (var e in existing)
+			{
 				var n = i < news.Length ? news[i] : null;
 				if (n == null)
 					result.Add(e);
@@ -212,7 +238,7 @@ namespace HenrySample
 					if (divergent)
 						result.Add(e);
 				}
-				i+= 1;
+				i += 1;
 			}
 			return result;
 		}
@@ -286,26 +312,60 @@ namespace HenrySample
 
 					var currentUrlParts = splitUrl(currentUrl);
 
-					IFreshNavigationService container;
+					IFreshNavigationService destContainer = null;
 					IEnumerable<PagePathSegment> segmentsToPop = null;
 					IEnumerable<PagePathSegment> segmentsToPush = null;
 					IFreshNavigationService newContainer = null;
+					Type containerType = null;
 
-					if (currentUrl == null || urlParts[0] != currentUrlParts[0])
-					{
-						newContainer = ResolveContainer(urlParts[0]);
-						if (newContainer == null)
-							throw new Exception("Container not found");
-					}
+					bool firstNavigation = currentUrl == null;
+					bool sameContainer = !firstNavigation && urlParts[0] == currentUrlParts[0];
 
-					if (currentUrl == null)
+					destContainer = QuietResolve<IFreshNavigationService>(urlParts[0]);
+
+					// FreshMVVM Code
+					//var page = FreshPageModelResolver.ResolvePageModel<T>(data);
+					//var navigationName = Guid.NewGuid().ToString();
+					//var naviationContainer = new FreshNavigationContainer(page, navigationName);
+					////await PushNewNavigationServiceModal(naviationContainer, page.GetModel(), animate);
+					//
+					//public Task PushNewNavigationServiceModal(IFreshNavigationService newNavigationService, FreshBasePageModel basePageModels, bool animate = true)
+					//{
+					//	return PushNewNavigationServiceModal(newNavigationService, new FreshBasePageModel[] { basePageModels }, animate);
+					//}
+					//
+					//public async Task PushNewNavigationServiceModal(IFreshNavigationService newNavigationService, FreshBasePageModel[] basePageModels, bool animate = true)
+					//{
+					//	var navPage = newNavigationService as Page;
+					//	if (navPage == null)
+					//		throw new Exception("Navigation service is not Page");
+					//
+					//	foreach (var pageModel in basePageModels)
+					//	{
+					//		pageModel.CurrentNavigationServiceName = newNavigationService.NavigationServiceName;
+					//		pageModel.PreviousNavigationServiceName = _currentPageModel.CurrentNavigationServiceName;
+					//		pageModel.IsModalFirstChild = true;
+					//	}
+					//
+					//	IFreshNavigationService rootNavigation = FreshIOC.Container.Resolve<IFreshNavigationService>(_currentPageModel.CurrentNavigationServiceName);
+					//	await rootNavigation.PushPage(navPage, null, true, animate);
+					//}
+					//return navigationName;
+
+					if (firstNavigation)
 					{
 						segmentsToPush = SegmentsFromUrlParts(urlParts.ToList().GetRange(1, urlParts.Length - 1));
-						container = newContainer;
 					}
 					else {
-						if (newContainer != null)   // switching containers
-						{
+						if (sameContainer)
+						{                      
+							destContainer = CurrentContainer;
+							var containerUrl = UrlOfContainer(newContainer);
+							var containerUrlSegments = SegmentsFromUrl(containerUrl);
+							segmentsToPop = GetSegmentsToPop(containerUrlSegments, urlSegments);
+							segmentsToPush = GetSegmentsToPush(containerUrlSegments, urlSegments);
+						}
+						else {	// changing container
 							if (aDestructive)
 							{
 								if (CurrentContainer != null)
@@ -313,36 +373,76 @@ namespace HenrySample
 									await CurrentContainer.PopToRoot(animate: false);
 								}
 							}
-							container = newContainer;
-							var containerUrl = UrlOfContainer(newContainer);
-							var containerUrlSegments = SegmentsFromUrl(containerUrl);
-							segmentsToPop = GetSegmentsToPop(containerUrlSegments, urlSegments);
-							segmentsToPush = GetSegmentsToPush(containerUrlSegments, urlSegments);
-						}
-						else {                      // same container
-							container = CurrentContainer;
-							var containerUrl = UrlOfContainer(newContainer);
-							var containerUrlSegments = SegmentsFromUrl(containerUrl);
-							segmentsToPop = GetSegmentsToPop(containerUrlSegments, urlSegments);
-							segmentsToPush = GetSegmentsToPush(containerUrlSegments, urlSegments);
+							if (destContainer != null)	// destination container exists
+							{
+								var containerUrl = UrlOfContainer(newContainer);
+								var containerUrlSegments = SegmentsFromUrl(containerUrl);
+								segmentsToPop = GetSegmentsToPop(containerUrlSegments, urlSegments);
+								segmentsToPush = GetSegmentsToPush(containerUrlSegments, urlSegments);
+							}
 						}
 					}
 
-					if (newContainer != null)
-						SelectContainer(newContainer);
+					if (destContainer == null)	// create destContainer with first page
+					{
+						if (segmentsToPush == null || !segmentsToPush.Any())
+							throw new Exception("Cannot navigate to a container without a root page");
+						var rootPageSegment = segmentsToPush.First();
+						segmentsToPush = segmentsToPush.Count()==1 ? null : segmentsToPush.ToList().GetRange(1, segmentsToPush.Count() - 1);
+
+						var page = ResolveSegmentPageModel(rootPageSegment);
+						var proceed = await rootPageSegment.Model.NavigateIn();
+						if (!proceed)
+						{
+							// do what?
+						}
+						destContainer = CreateContainer(urlParts[0], page);
+						//var navigationName = Guid.NewGuid().ToString();
+						//var naviationContainer = new FreshNavigationContainer(page, navigationName);
+
+						//	var navPage = newNavigationService as Page;
+						//	if (navPage == null)
+						//		throw new Exception("Navigation service is not Page");
+						//
+						//	foreach (var pageModel in basePageModels)
+						//	{
+						//		pageModel.CurrentNavigationServiceName = newNavigationService.NavigationServiceName;
+						//		pageModel.PreviousNavigationServiceName = _currentPageModel.CurrentNavigationServiceName;
+						//		pageModel.IsModalFirstChild = true;
+						//	}
+						//
+						//	IFreshNavigationService rootNavigation = FreshIOC.Container.Resolve<IFreshNavigationService>(_currentPageModel.CurrentNavigationServiceName);
+						//	await rootNavigation.PushPage(navPage, null, true, animate);
+					}
+					if (destContainer == null)
+						throw new Exception("Failed to get destination container");
+
+					SelectContainer(destContainer);						
 					if (segmentsToPop != null)
 						foreach (var s in segmentsToPop)
 						{
-							await container.PopPage(modal: false, animate: false);
+							await destContainer.PopPage(modal: false, animate: false);
 						}
 					if (segmentsToPush != null)
-						result = await PushSegments(container, segmentsToPush);
+						result = await PushSegments(destContainer, segmentsToPush);
 					else
 						result = true;
 				}
-				return result;
 			}
+			return result;
 		}
 
-}
+		static IFreshNavigationService CreateContainer(string aName, Page aPage)
+		{
+			IFreshNavigationService result = null;
+			aName = NormalizeContainerName(aName);
+			var containerType = QuietResolve<Type>(aName + "Type");
+			if (containerType == typeof(FreshNavigationContainer)) {
+				return new FreshNavigationContainer(aPage,aName);
+			}
+			else {
+				throw new Exception("Container type not found or not yet supported");
+			}
+		}
+	}	
 }

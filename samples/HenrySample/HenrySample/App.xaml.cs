@@ -16,9 +16,7 @@ namespace HenrySample
 			Henry.RegisterPageModel<SecondPageModel>();
 			Henry.RegisterPageModel<ThirdPageModel>();
 
-
-
-			MainPage = new HenrySamplePage();
+			Henry.Goto("/Login/First");
 		}
 
 		protected override void OnStart()
